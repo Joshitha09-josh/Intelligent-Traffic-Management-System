@@ -10,6 +10,9 @@ pipeline {
     environment {
         DOCKER = 'C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe'
         KUBECTL = 'C:\\Program Files\\Docker\\Docker\\resources\\bin\\kubectl.exe'
+        // Use the kubeconfig that works in your interactive Windows account.
+        // Ensure the Jenkins service account has read access to this file.
+        KUBECONFIG = 'C:\\Users\\BALAJI\\.kube\\config'
         DOCKER_IMAGE = 'balaji00002/traffic-management-dashboard'
         IMAGE_TAG = "build-${BUILD_NUMBER}"
         DOCKER_CREDENTIALS_ID = 'dockerhub-credentials'
@@ -30,38 +33,38 @@ pipeline {
         stage('Validate Files') {
             steps {
                 bat '''
-                    if not exist index.html (
-                        echo ERROR: index.html is missing
-                        exit /b 1
-                    )
-                    if not exist Dockerfile (
-                        echo ERROR: Dockerfile is missing
-                        exit /b 1
-                    )
-                    if not exist deployment.yaml (
-                        echo ERROR: deployment.yaml is missing
-                        exit /b 1
-                    )
-                    if not exist Jenkinsfile (
-                        echo ERROR: Jenkinsfile is missing
-                        exit /b 1
-                    )
+                    if not exist index.html exit /b 1
+                    if not exist Dockerfile exit /b 1
+                    if not exist deployment.yaml exit /b 1
+                    if not exist Jenkinsfile exit /b 1
                     echo Required application files found.
                 '''
             }
         }
 
-        stage('Check Tools and Kubernetes') {
+        stage('Check Docker and Kubernetes Access') {
             steps {
                 bat '''
                     "%DOCKER%" --version
                     if errorlevel 1 exit /b 1
+
                     "%KUBECTL%" version --client
                     if errorlevel 1 exit /b 1
+
+                    echo Using kubeconfig: %KUBECONFIG%
+                    if not exist "%KUBECONFIG%" (
+                        echo ERROR: kubeconfig file not found or not accessible.
+                        exit /b 1
+                    )
+
                     "%KUBECTL%" config current-context
                     if errorlevel 1 exit /b 1
+
                     "%KUBECTL%" get nodes
-                    if errorlevel 1 exit /b 1
+                    if errorlevel 1 (
+                        echo ERROR: Kubernetes API access failed. Check kubeconfig and certificate trust.
+                        exit /b 1
+                    )
                 '''
             }
         }
@@ -77,7 +80,7 @@ pipeline {
 
         stage('Smoke Test Image') {
             steps {
-                // This expects the Dockerfile to use nginx and serve the site on port 80.
+                // This test expects an Nginx-based Dockerfile serving the site on port 80.
                 bat '''
                     "%DOCKER%" run --rm %DOCKER_IMAGE%:%IMAGE_TAG% nginx -t
                     if errorlevel 1 exit /b 1
@@ -147,14 +150,11 @@ pipeline {
     }
 
     post {
-        always {
-            bat 'if exist deployment.yaml type deployment.yaml > nul'
-        }
         success {
             echo 'Traffic Management pipeline completed successfully.'
         }
         failure {
-            echo 'Pipeline failed. Review the failed stage. Deployment stage attempts rollback if rollout fails.'
+            echo 'Pipeline failed. Review the first failing stage. Do not disable TLS verification; fix kubeconfig or certificate trust.'
         }
     }
 }
