@@ -1,0 +1,156 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Intelligent Traffic Management</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: Arial, sans-serif;
+      background: #f1f5f9; color: #172033;
+    }
+    header {
+      background: #10243a; color: white; padding: 24px 5%;
+    }
+    header h1 { margin: 0 0 8px; font-size: 27px; }
+    header p { margin: 0; color: #cbd5e1; }
+    main { max-width: 1250px; margin: auto; padding: 24px; }
+    .stats {
+      display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr));
+      gap: 16px; margin-bottom: 22px;
+    }
+    .card, .panel {
+      background: white; padding: 20px; border-radius: 12px;
+      box-shadow: 0 2px 8px #0f172a0d;
+    }
+    .stat { font-size: 28px; font-weight: bold; margin-top: 10px; }
+    .muted { color: #64748b; font-size: 14px; }
+    .alerts { display: grid; gap: 10px; margin-bottom: 22px; }
+    .alert {
+      background: #fff7ed; border-left: 5px solid #ea580c;
+      padding: 13px 16px; border-radius: 6px;
+    }
+    .emergency { background: #fef2f2; border-color: #dc2626; }
+    .closure { background: #fffbeb; border-color: #d97706; }
+    .table-wrap { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; min-width: 750px; }
+    th, td {
+      padding: 13px 12px; border-bottom: 1px solid #e2e8f0;
+      text-align: left; font-size: 14px;
+    }
+    th { background: #f8fafc; }
+    .badge {
+      display: inline-block; border-radius: 20px; padding: 5px 9px;
+      font-size: 12px; font-weight: bold;
+    }
+    .Low { background: #dcfce7; color: #166534; }
+    .Moderate { background: #fef3c7; color: #92400e; }
+    .High { background: #ffedd5; color: #9a3412; }
+    .Critical { background: #fee2e2; color: #991b1b; }
+    footer { text-align: center; padding: 22px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Intelligent Traffic Management System</h1>
+    <p>Metropolitan Traffic Control Authority | Live-simulated monitoring</p>
+  </header>
+
+  <main>
+    <section class="stats">
+      <div class="card">
+        <div class="muted">Intersections Monitored</div>
+        <div class="stat" id="intersectionCount">0</div>
+      </div>
+      <div class="card">
+        <div class="muted">Total Vehicles</div>
+        <div class="stat" id="vehicleCount">0</div>
+      </div>
+      <div class="card">
+        <div class="muted">Waiting-Time Alerts</div>
+        <div class="stat" id="alertCount">0</div>
+      </div>
+    </section>
+
+    <section class="panel" style="margin-bottom:22px">
+      <h2>Traffic Alerts and Advisories</h2>
+      <div id="alerts" class="alerts"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Intersection Monitoring</h2>
+      <p class="muted">All values are simulated for assessment purposes.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Intersection ID</th>
+              <th>Location</th>
+              <th>Vehicles</th>
+              <th>Avg. Wait (sec)</th>
+              <th>Signal Status</th>
+              <th>Congestion</th>
+            </tr>
+          </thead>
+          <tbody id="trafficRows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer>Traffic Management Dashboard | Demonstration data only</footer>
+
+  <script>
+    const intersections = [
+      { id: "INT-001", location: "Central Avenue", vehicles: 145, wait: 145, signal: "Red", congestion: "Critical" },
+      { id: "INT-002", location: "Market Street", vehicles: 92, wait: 85, signal: "Green", congestion: "Moderate" },
+      { id: "INT-003", location: "Airport Road", vehicles: 118, wait: 128, signal: "Red", congestion: "High" },
+      { id: "INT-004", location: "River Bridge", vehicles: 48, wait: 35, signal: "Green", congestion: "Low" },
+      { id: "INT-005", location: "City Hospital Junction", vehicles: 130, wait: 110, signal: "Amber", congestion: "High" }
+    ];
+
+    const advisories = [
+      { type: "closure", message: "Road closure: Market Street eastbound is closed for simulated maintenance. Use Lake Road as an alternative." },
+      { type: "emergency", message: "Emergency vehicle advisory: An ambulance is approaching City Hospital Junction. Give way and keep the junction clear." }
+    ];
+
+    function renderDashboard() {
+      const total = intersections.reduce((sum, item) => sum + item.vehicles, 0);
+      const waitingAlerts = intersections.filter(item => item.wait > 120);
+
+      document.getElementById("intersectionCount").textContent = intersections.length;
+      document.getElementById("vehicleCount").textContent = total.toLocaleString();
+      document.getElementById("alertCount").textContent = waitingAlerts.length;
+
+      document.getElementById("trafficRows").innerHTML = intersections.map(item => `
+        <tr>
+          <td>${item.id}</td>
+          <td>${item.location}</td>
+          <td>${item.vehicles}</td>
+          <td>${item.wait}${item.wait > 120 ? " ⚠️" : ""}</td>
+          <td>${item.signal}</td>
+          <td><span class="badge ${item.congestion}">${item.congestion}</span></td>
+        </tr>
+      `).join("");
+
+      const alerts = [
+        ...waitingAlerts.map(item => ({
+          type: "alert",
+          message: `High waiting time: ${item.location} (${item.id}) has an average wait of ${item.wait} seconds.`
+        })),
+        ...advisories
+      ];
+
+      document.getElementById("alerts").innerHTML = alerts.map(item => `
+        <div class="alert ${item.type === "emergency" ? "emergency" : item.type === "closure" ? "closure" : ""}">
+          ${item.message}
+        </div>
+      `).join("");
+    }
+
+    renderDashboard();
+  </script>
+</body>
+</html>
