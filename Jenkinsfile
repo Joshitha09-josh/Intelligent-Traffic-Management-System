@@ -8,11 +8,14 @@ pipeline {
     }
 
     environment {
+        DOCKER = 'C:\\Program Files\\Docker\\Docker\\resources\\bin\\docker.exe'
+        KUBECTL = 'C:\\Program Files\\Docker\\Docker\\resources\\bin\\kubectl.exe'
         DOCKER_IMAGE = 'balaji00002/traffic-management-dashboard'
         IMAGE_TAG = "build-${BUILD_NUMBER}"
         DOCKER_CREDENTIALS_ID = 'dockerhub-credentials'
         DEPLOYMENT_NAME = 'traffic-dashboard'
         CONTAINER_NAME = 'traffic-app'
+        SERVICE_NAME = 'traffic-dashboard-service'
         K8S_NAMESPACE = 'default'
     }
 
@@ -27,34 +30,58 @@ pipeline {
         stage('Validate Files') {
             steps {
                 bat '''
-                    if not exist index.html exit /b 1
-                    if not exist Dockerfile exit /b 1
-                    if not exist deployment.yaml exit /b 1
-                    if not exist Jenkinsfile exit /b 1
+                    if not exist index.html (
+                        echo ERROR: index.html is missing
+                        exit /b 1
+                    )
+                    if not exist Dockerfile (
+                        echo ERROR: Dockerfile is missing
+                        exit /b 1
+                    )
+                    if not exist deployment.yaml (
+                        echo ERROR: deployment.yaml is missing
+                        exit /b 1
+                    )
+                    if not exist Jenkinsfile (
+                        echo ERROR: Jenkinsfile is missing
+                        exit /b 1
+                    )
                     echo Required application files found.
                 '''
             }
         }
 
-        stage('Check Tools') {
+        stage('Check Tools and Kubernetes') {
             steps {
                 bat '''
-                    docker --version
-                    kubectl version --client
-                    kubectl get nodes
+                    "%DOCKER%" --version
+                    if errorlevel 1 exit /b 1
+                    "%KUBECTL%" version --client
+                    if errorlevel 1 exit /b 1
+                    "%KUBECTL%" config current-context
+                    if errorlevel 1 exit /b 1
+                    "%KUBECTL%" get nodes
+                    if errorlevel 1 exit /b 1
                 '''
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                bat 'docker build -t %DOCKER_IMAGE%:%IMAGE_TAG% -t %DOCKER_IMAGE%:latest .'
+                bat '''
+                    "%DOCKER%" build -t %DOCKER_IMAGE%:%IMAGE_TAG% -t %DOCKER_IMAGE%:latest .
+                    if errorlevel 1 exit /b 1
+                '''
             }
         }
 
         stage('Smoke Test Image') {
             steps {
-                bat 'docker run --rm %DOCKER_IMAGE%:%IMAGE_TAG% nginx -t'
+                // This expects the Dockerfile to use nginx and serve the site on port 80.
+                bat '''
+                    "%DOCKER%" run --rm %DOCKER_IMAGE%:%IMAGE_TAG% nginx -t
+                    if errorlevel 1 exit /b 1
+                '''
             }
         }
 
@@ -67,13 +94,13 @@ pipeline {
                 )]) {
                     bat '''
                         @echo off
-                        echo %DOCKERHUB_TOKEN% | docker login -u %DOCKERHUB_USER% --password-stdin
+                        echo %DOCKERHUB_TOKEN% | "%DOCKER%" login -u %DOCKERHUB_USER% --password-stdin
                         if errorlevel 1 exit /b 1
-                        docker push %DOCKER_IMAGE%:%IMAGE_TAG%
+                        "%DOCKER%" push %DOCKER_IMAGE%:%IMAGE_TAG%
                         if errorlevel 1 exit /b 1
-                        docker push %DOCKER_IMAGE%:latest
+                        "%DOCKER%" push %DOCKER_IMAGE%:latest
                         if errorlevel 1 exit /b 1
-                        docker logout
+                        "%DOCKER%" logout
                     '''
                 }
             }
@@ -84,20 +111,20 @@ pipeline {
                 script {
                     try {
                         bat '''
-                            kubectl apply -f deployment.yaml
+                            "%KUBECTL%" apply -f deployment.yaml
                             if errorlevel 1 exit /b 1
 
-                            kubectl set image deployment/%DEPLOYMENT_NAME% %CONTAINER_NAME%=%DOCKER_IMAGE%:%IMAGE_TAG% -n %K8S_NAMESPACE%
+                            "%KUBECTL%" set image deployment/%DEPLOYMENT_NAME% %CONTAINER_NAME%=%DOCKER_IMAGE%:%IMAGE_TAG% -n %K8S_NAMESPACE%
                             if errorlevel 1 exit /b 1
 
-                            kubectl rollout status deployment/%DEPLOYMENT_NAME% -n %K8S_NAMESPACE% --timeout=120s
+                            "%KUBECTL%" rollout status deployment/%DEPLOYMENT_NAME% -n %K8S_NAMESPACE% --timeout=120s
                             if errorlevel 1 exit /b 1
                         '''
                     } catch (err) {
                         echo 'Deployment failed. Attempting rollback to the previous Kubernetes revision.'
                         bat '''
-                            kubectl rollout undo deployment/%DEPLOYMENT_NAME% -n %K8S_NAMESPACE%
-                            kubectl rollout status deployment/%DEPLOYMENT_NAME% -n %K8S_NAMESPACE% --timeout=120s
+                            "%KUBECTL%" rollout undo deployment/%DEPLOYMENT_NAME% -n %K8S_NAMESPACE%
+                            "%KUBECTL%" rollout status deployment/%DEPLOYMENT_NAME% -n %K8S_NAMESPACE% --timeout=120s
                         '''
                         throw err
                     }
@@ -108,9 +135,12 @@ pipeline {
         stage('Verify Deployment') {
             steps {
                 bat '''
-                    kubectl get deployment %DEPLOYMENT_NAME% -n %K8S_NAMESPACE%
-                    kubectl get pods -n %K8S_NAMESPACE% -l app=traffic-dashboard
-                    kubectl get service traffic-dashboard-service -n %K8S_NAMESPACE%
+                    "%KUBECTL%" get deployment %DEPLOYMENT_NAME% -n %K8S_NAMESPACE%
+                    if errorlevel 1 exit /b 1
+                    "%KUBECTL%" get pods -n %K8S_NAMESPACE% -l app=traffic-dashboard
+                    if errorlevel 1 exit /b 1
+                    "%KUBECTL%" get service %SERVICE_NAME% -n %K8S_NAMESPACE%
+                    if errorlevel 1 exit /b 1
                 '''
             }
         }
@@ -118,13 +148,13 @@ pipeline {
 
     post {
         always {
-            bat 'docker image ls %DOCKER_IMAGE%'
+            bat 'if exist deployment.yaml type deployment.yaml > nul'
         }
         success {
             echo 'Traffic Management pipeline completed successfully.'
         }
         failure {
-            echo 'Pipeline failed. Review the stage logs above; Kubernetes deployment stage attempts rollback on deployment failure.'
+            echo 'Pipeline failed. Review the failed stage. Deployment stage attempts rollback if rollout fails.'
         }
     }
 }
